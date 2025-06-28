@@ -26,22 +26,67 @@ Tools werden kategorisiert in einer `tools.conf`-Datei verwaltet und über ein b
 
 ## 📁 Projektstruktur
 
+```
 .
-├── arch-helper.sh # Hauptskript (dieses Repository)
-├── tools.conf # Konfigurationsdatei mit Tool-Definitionen
-└── install.log # Installationsprotokoll (wird automatisch erstellt)
+├── arch-helper.sh    # Hauptskript (dieses Repository)
+├── tools.conf        # Konfigurationsdatei mit Tool-Definitionen
+└── install.log       # Installationsprotokoll (wird automatisch erstellt)
+```
 
 ---
 
 ## 📝 Beispiel für `tools.conf`
 
-```conf
+```
 # Format: Kategorie:Toolname:Beschreibung:Installationsbefehl
 
 entwicklung:neovim:Moderne Vim-Alternative:sudo pacman -S neovim
 entwicklung:code:Visual Studio Code:flatpak install flathub com.visualstudio.code
 system:htop:Interaktiver Prozessmonitor:sudo pacman -S htop
+```
 
 ---
 
-## 📝 Beispiel für `tools.conf` 
+## 🚀 Nutzung
+
+### 🔄 Repository klonen
+
+```bash
+git clone https://github.com/dein-benutzername/arch-helper.git
+cd arch-helper
+```
+
+### 🛠️ `tools.conf` anpassen
+
+Trage deine gewünschten Tools in die Datei `tools.conf` ein.  
+Verwende das Format: `Kategorie:Toolname:Beschreibung:Installationsbefehl`.
+
+### ▶️ Skript starten
+
+```bash
+chmod +x arch-helper.sh
+./arch-helper.sh
+```
+
+---
+
+## 🧾 Voraussetzungen
+
+- Eine **Arch-basierte Linux-Distribution**
+- Terminal mit Bash
+- Internetverbindung
+
+> Benötigte Tools (`fzf`, `flatpak`, AUR-Helper) werden bei Bedarf automatisch installiert.
+
+---
+
+## 📜 Lizenz
+
+MIT License – frei zur Nutzung, Modifikation und Weitergabe.
+
+---
+
+## 👨‍💻 Autor
+
+**tobayashi**  
+🛠️ Made with ❤️ for Arch-Linux-Fans
