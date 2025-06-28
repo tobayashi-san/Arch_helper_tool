@@ -73,7 +73,6 @@ chmod +x arch-helper.sh
 ## 🧾 Requirements
 
 - An **Arch-based Linux distribution**
-- Terminal with Bash
 - Internet connection
 
 > Required tools (`fzf`, `flatpak`, AUR helper) are installed automatically if missing.
