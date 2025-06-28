@@ -52,8 +52,8 @@ system:htop:Interaktiver Prozessmonitor:sudo pacman -S htop
 ### 🔄 Repository klonen
 
 ```bash
-git clone https://github.com/tobayashi-san/Arch_helper_tool.git
-cd arch-helper_tool
+git clone https://github.com/tobayashi-san/arch-helper-tool.git
+cd arch-helper-tool
 ```
 
 ### 🛠️ `tools.conf` anpassen
