@@ -89,4 +89,4 @@ MIT License – frei zur Nutzung, Modifikation und Weitergabe.
 ## 👨‍💻 Autor
 
 **tobayashi**  
-🛠️ Made with ❤️ for Arch-Linux-Fans
+
