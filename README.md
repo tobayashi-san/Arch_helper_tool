@@ -1,67 +1,67 @@
 # 🐧 Arch Helper Tool
 
-Ein interaktives Bash-Tool zur komfortablen Installation von Software auf Arch-basierten Distributionen.  
-Tools werden kategorisiert in einer `tools.conf`-Datei verwaltet und über ein benutzerfreundliches `fzf`-Menü auswählbar gemacht.
+An interactive Bash tool for convenient software installation on Arch-based distributions.  
+Tools are categorized and managed in a `tools.conf` file and selectable via a user-friendly `fzf` menu.
 
 ---
 
 ## 🔧 Features
 
-- Kompatibel mit:
+- Compatible with:
   - **Arch Linux**
   - **Manjaro**
   - **EndeavourOS**
   - **Garuda**
   - **ArcoLinux**
   - **Artix Linux**
-- Automatischer Check und Installation von:
+- Automatically checks and installs:
   - `fzf`
-  - `flatpak` (inkl. Flathub)
-  - AUR Helper (`yay` oder `paru`)
-- Interaktive Tool-Auswahl mit Vorschau, Beschreibung und Installationsbefehl
-- Protokollierung aller Installationen in `install.log`
-- Einfache Erweiterbarkeit durch `tools.conf`
+  - `flatpak` (incl. Flathub)
+  - AUR helper (`yay` or `paru`)
+- Interactive tool selection with preview, description, and installation command
+- Logs all installations in `install.log`
+- Easily extendable via `tools.conf`
 
 ---
 
-## 📁 Projektstruktur
+## 📁 Project Structure
 
 ```
 .
-├── arch-helper.sh    # Hauptskript (dieses Repository)
-├── tools.conf        # Konfigurationsdatei mit Tool-Definitionen
-└── install.log       # Installationsprotokoll (wird automatisch erstellt)
+├── arch-helper.sh    # Main script (this repository)
+├── tools.conf        # Configuration file with tool definitions
+└── install.log       # Installation log (automatically created)
 ```
 
 ---
 
-## 📝 Beispiel für `tools.conf`
+## 📝 Example `tools.conf`
 
 ```
-# Format: Kategorie:Toolname:Beschreibung:Installationsbefehl
+# Format: Category:Tool Name:Description:Installation Command
 
-entwicklung:neovim:Moderne Vim-Alternative:sudo pacman -S neovim
-entwicklung:code:Visual Studio Code:flatpak install flathub com.visualstudio.code
-system:htop:Interaktiver Prozessmonitor:sudo pacman -S htop
+development:neovim:Modern Vim alternative:sudo pacman -S neovim
+development:code:Visual Studio Code:flatpak install flathub com.visualstudio.code
+system:htop:Interactive process monitor:sudo pacman -S htop
 ```
 
 ---
 
-## 🚀 Nutzung
+## 🚀 Usage
 
-### 🔄 Repository klonen
+### 🔄 Clone the Repository
 
 ```bash
 git clone https://github.com/tobayashi-san/arch-helper-tool.git
 cd arch-helper-tool
 ```
 
-### 🛠️ `tools.conf` anpassen
+### 🛠️ Edit `tools.conf`
 
-Trage deine gewünschten Tools in die Datei `tools.conf` ein.  
-Verwende das Format: `Kategorie:Toolname:Beschreibung:Installationsbefehl`.
+Add your desired tools to the `tools.conf` file.  
+Use the format: `Category:Tool Name:Description:Installation Command`.
 
-### ▶️ Skript starten
+### ▶️ Run the Script
 
 ```bash
 chmod +x arch-helper.sh
@@ -70,23 +70,22 @@ chmod +x arch-helper.sh
 
 ---
 
-## 🧾 Voraussetzungen
+## 🧾 Requirements
 
-- Eine **Arch-basierte Linux-Distribution**
-- Terminal mit Bash
-- Internetverbindung
+- An **Arch-based Linux distribution**
+- Terminal with Bash
+- Internet connection
 
-> Benötigte Tools (`fzf`, `flatpak`, AUR-Helper) werden bei Bedarf automatisch installiert.
-
----
-
-## 📜 Lizenz
-
-MIT License – frei zur Nutzung, Modifikation und Weitergabe.
+> Required tools (`fzf`, `flatpak`, AUR helper) are installed automatically if missing.
 
 ---
 
-## 👨‍💻 Autor
+## 📜 License
 
-**tobayashi**  
+MIT License – free to use, modify, and distribute.
 
+---
+
+## 👨‍💻 Author
+
+**tobayashi**
