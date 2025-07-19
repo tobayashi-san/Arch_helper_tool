@@ -1,9 +1,8 @@
 # Arch Linux Configuration Tool
-# YAML Configuration File for GitHub
 version: "1.0"
 description: "Configuration for Arch Linux setup and maintenance"
-author: "Arch Config Tool"
-last_updated: "2025-01-19"
+author: "tobayashi"
+last_updated: "2025-07-19"
 
 categories:
   system_maintenance:
@@ -16,23 +15,23 @@ categories:
         description: "Full system update with pacman"
         command: "sudo pacman -Syu --noconfirm"
         tags: ["update", "system", "pacman"]
-        
+
       - name: "Clean Package Cache"
         description: "Remove old cached packages to free disk space"
         command: "sudo pacman -Sc --noconfirm"
         tags: ["cleanup", "cache", "disk-space"]
-        
+
       - name: "Remove Orphans"
         description: "Remove orphaned packages that are no longer needed"
         command: "sudo pacman -Rns $(pacman -Qtdq) --noconfirm || echo 'No orphaned packages found'"
         tags: ["cleanup", "orphans"]
-        
+
       - name: "Update Mirrorlist"
         description: "Optimize package mirrors with reflector for faster downloads"
-        command: "sudo reflector --latest 20 --protocol https --sort rate --save /etc/pacman.d/mirrorlist"
+        command: "sudo cp -f /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak && sudo reflector --latest 20 --protocol https --sort rate --verbose --save /etc/pacman.d/mirrorlist"
         tags: ["mirrors", "optimization", "speed"]
         requires: ["reflector"]
-        
+
       - name: "Clear System Logs"
         description: "Clear old systemd journal logs to free space"
         command: "sudo journalctl --vacuum-time=7d"
@@ -46,22 +45,22 @@ categories:
     tools:
       - name: "NVIDIA Open Drivers"
         description: "Open-source NVIDIA drivers (recommended for newer cards)"
-        command: "sudo pacman -S --noconfirm nvidia-open nvidia-utils lib32-nvidia-utils"
+        command: "sudo pacman -S --noconfirm nvidia-open nvidia-utils lib32-nvidia-utils nvidia-settings"
         tags: ["nvidia", "drivers", "open-source"]
         requires: ["nvidia-hardware"]
-        
+
       - name: "NVIDIA Proprietary"
         description: "Proprietary NVIDIA drivers (for older cards or specific needs)"
-        command: "sudo pacman -S --noconfirm nvidia nvidia-utils lib32-nvidia-utils"
+        command: "sudo pacman -S --noconfirm nvidia nvidia-utils lib32-nvidia-utils nvidia-settings"
         tags: ["nvidia", "drivers", "proprietary"]
         requires: ["nvidia-hardware"]
-        
+
       - name: "AMD Drivers"
         description: "AMD graphics drivers with Vulkan support"
         command: "sudo pacman -S --noconfirm mesa lib32-mesa vulkan-radeon lib32-vulkan-radeon"
         tags: ["amd", "drivers", "mesa", "vulkan"]
         requires: ["amd-hardware"]
-        
+
       - name: "Intel Graphics"
         description: "Intel integrated graphics drivers"
         command: "sudo pacman -S --noconfirm mesa lib32-mesa vulkan-intel lib32-vulkan-intel"
@@ -74,36 +73,26 @@ categories:
     order: 3
     icon: "💻"
     tools:
-      - name: "Git"
-        description: "Distributed version control system"
-        command: "sudo pacman -S --noconfirm git"
-        tags: ["git", "vcs", "development"]
-        
-      - name: "Base Development"
-        description: "Essential development tools (gcc, make, etc.)"
-        command: "sudo pacman -S --noconfirm base-devel"
-        tags: ["development", "compiler", "build-tools"]
-        
       - name: "Visual Studio Code"
         description: "Popular code editor from Microsoft"
         command: "paru -S --noconfirm visual-studio-code-bin"
         tags: ["editor", "ide", "microsoft"]
         requires: ["aur-helper"]
-        
+
       - name: "Docker"
         description: "Container platform for development and deployment"
         command: "sudo pacman -S --noconfirm docker docker-compose && sudo systemctl enable docker"
         tags: ["docker", "containers", "devops"]
-        
-      - name: "Node.js & NPM"
-        description: "JavaScript runtime and package manager"
-        command: "sudo pacman -S --noconfirm nodejs npm"
-        tags: ["nodejs", "javascript", "npm"]
-        
+
       - name: "Python Development"
         description: "Python interpreter and development tools"
         command: "sudo pacman -S --noconfirm python python-pip python-virtualenv"
         tags: ["python", "pip", "development"]
+
+      - name: "Virtual Machine"
+        description: "All necessary packages to run and manage virtual machines with Virt Manager"
+        command: "sudo pacman -S --noconfirm qemu-full virt-manager virt-install edk2-ovmf libvirt dnsmasq bridge-utils libosinfo swtpm guestfs-tools virt-viewer && sudo systemctl enable --now libvirtd && sudo usermod -aG libvirt,kvm "$(logname)""
+        tags: ["virtualization", "kvm", "libvirt", "qemu"]
 
   multimedia:
     name: "Multimedia"
@@ -115,29 +104,36 @@ categories:
         description: "Versatile multimedia player that plays most formats"
         command: "sudo pacman -S --noconfirm vlc"
         tags: ["video", "audio", "player", "codec"]
-        
-      - name: "Firefox Browser"
-        description: "Open-source web browser from Mozilla"
-        command: "sudo pacman -S --noconfirm firefox"
-        tags: ["browser", "web", "mozilla"]
-        
+
       - name: "GIMP"
         description: "GNU Image Manipulation Program for photo editing"
         command: "sudo pacman -S --noconfirm gimp"
         tags: ["image", "photo", "editing", "graphics"]
-        
+
       - name: "OBS Studio"
         description: "Open-source streaming and recording software"
         command: "sudo pacman -S --noconfirm obs-studio"
         tags: ["streaming", "recording", "obs", "video"]
-        optional: true
-        
+
       - name: "Spotify"
         description: "Music streaming service client"
-        command: "paru -S --noconfirm spotify"
+        command: "flatpak install -y flathub com.spotify.Client"
         tags: ["music", "streaming", "spotify"]
-        requires: ["aur-helper"]
-        optional: true
+        requires: ["flatpak"]
+
+      - name: "Discord"
+        description: "Music streaming service client"
+        command: "flatpak install -y flathub com.discordapp.Discord"
+        tags: ["voice", "chat", "discord"]
+        requires: ["flatpak"]
+
+
+      - name: "Zen Browser"
+        description: "Zen is the best way to browse the web. Beautifully designed, privacy-focused, and packed with features. We care about your experience, not your data."
+        command: "flatpak install --noninteractive flathub app.zen_browser.zen"
+        tags: ["browser", "web", "zen"]
+        requires: ["flatpak"]
+
 
   gaming:
     name: "Gaming"
@@ -147,23 +143,26 @@ categories:
     tools:
       - name: "Steam"
         description: "Popular gaming platform from Valve"
-        command: "sudo pacman -S --noconfirm steam"
+        command: "flatpak install -y flathub com.valvesoftware.Steam"
         tags: ["gaming", "steam", "valve"]
-        
+        requires: ["flatpak"]
+
       - name: "Lutris"
         description: "Gaming client for managing games from multiple sources"
-        command: "sudo pacman -S --noconfirm lutris"
+        command: "flatpak install -y flathub net.lutris.Lutris"
         tags: ["gaming", "lutris", "wine", "emulation"]
-        
+        requires: ["flatpak"]
+
       - name: "Wine"
         description: "Windows compatibility layer for running Windows games"
         command: "sudo pacman -S --noconfirm wine winetricks"
         tags: ["wine", "windows", "compatibility"]
-        
-      - name: "GameMode"
+
+      - name: "ProtonPlus"
         description: "Optimize system performance for gaming"
-        command: "sudo pacman -S --noconfirm gamemode lib32-gamemode"
-        tags: ["gaming", "performance", "optimization"]
+        command: "flatpak install -y flathub com.vysp3r.ProtonPlus"
+        tags: ["gaming", "proton", "optimization"]
+        requires: ["flatpak"]
 
   productivity:
     name: "Productivity"
@@ -175,24 +174,26 @@ categories:
         description: "Complete office suite (Writer, Calc, Impress, etc.)"
         command: "sudo pacman -S --noconfirm libreoffice-fresh"
         tags: ["office", "documents", "spreadsheet", "presentation"]
-        
+
+      - name: "OnlyOffice"
+        description: "Modern office suite"
+        command: "flatpak install -y flathub org.onlyoffice.desktopeditors"
+        tags: ["office", "documents", "spreadsheet", "presentation"]
+        requires: ["flatpak"]
+
       - name: "Thunderbird"
         description: "Email client from Mozilla"
         command: "sudo pacman -S --noconfirm thunderbird"
         tags: ["email", "client", "mozilla"]
-        
-      - name: "Discord"
-        description: "Communication platform for communities"
-        command: "sudo pacman -S --noconfirm discord"
-        tags: ["communication", "chat", "voice"]
-        
-      - name: "Telegram"
-        description: "Secure messaging application"
-        command: "sudo pacman -S --noconfirm telegram-desktop"
-        tags: ["messaging", "secure", "communication"]
+
+      - name: "Proton Mail"
+        description: "Secure email that protects your privacy"
+        command: "flatpak install -y me.proton.Mail"
+        tags: ["mail", "communication", "proton"]
+        requires: ["flatpak"]
 
   security:
-    name: "Security & Privacy"
+    name: "Security & Backup"
     description: "Security tools and privacy applications"
     order: 7
     icon: "🔐"
@@ -201,22 +202,13 @@ categories:
         description: "Uncomplicated Firewall for basic network protection"
         command: "sudo pacman -S --noconfirm ufw && sudo ufw enable"
         tags: ["firewall", "security", "network"]
-        
-      - name: "ClamAV Antivirus"
-        description: "Open-source antivirus scanner"
-        command: "sudo pacman -S --noconfirm clamav && sudo freshclam"
-        tags: ["antivirus", "security", "scanner"]
-        
-      - name: "Tor Browser"
-        description: "Anonymous web browser for privacy"
-        command: "paru -S --noconfirm tor-browser"
-        tags: ["privacy", "anonymity", "browser", "tor"]
-        requires: ["aur-helper"]
-        
-      - name: "KeePassXC"
-        description: "Secure password manager"
-        command: "sudo pacman -S --noconfirm keepassxc"
-        tags: ["password", "security", "encryption"]
+
+      - name: "Pika Backup"
+        description: "Backup utility supporting encryption, scheduling, and incremental backups"
+        command: "flatpak install -y flathub org.gnome.World.PikaBackup"
+        tags: ["archive", "backup", "pika"]
+        requires: ["flatpak"]
+
 
   aur_helpers:
     name: "AUR Helpers"
@@ -229,7 +221,7 @@ categories:
         command: "git clone https://aur.archlinux.org/yay.git /tmp/yay && cd /tmp/yay && makepkg -si --noconfirm"
         tags: ["aur", "helper", "yay", "package-manager"]
         requires: ["git", "base-devel"]
-        
+
       - name: "Install Paru"
         description: "Feature-packed AUR helper written in Rust"
         command: "git clone https://aur.archlinux.org/paru.git /tmp/paru && cd /tmp/paru && makepkg -si --noconfirm"
@@ -246,15 +238,47 @@ categories:
         description: "Install Flatpak and add Flathub repository"
         command: "sudo pacman -S --noconfirm flatpak && flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo"
         tags: ["flatpak", "setup", "flathub"]
-        
-      - name: "Blender (Flatpak)"
-        description: "3D creation suite via Flatpak"
-        command: "flatpak install -y flathub org.blender.Blender"
-        tags: ["3d", "modeling", "animation", "flatpak"]
+
+  troubleshoot:
+    name: "Troubleshoot & Fixes"
+    description: ""
+    order: 10
+    icon: "📦"
+    tools:
+      - name: "No Audio Devices"
+        description: "No audio devices are shown"
+        command: "sudo pacman -S --noconfirm sof-firmware"
+        tags: ["audio", "setup", "troubleshoot", "driver"]
+
+      - name: "Bluetooth can't start"
+        description: "Bluetooth cant be started"
+        command: "sudo systemctl enable bluetooth && sudo systemctl start bluetooth"
+        tags: ["bluetooth", "setup", "troubleshoot"]
+
+      - name: "Network-Manager"
+        description: "Network cant be started"
+        command: "sudo systemctl enable NetworkManager && sudo systemctl start NetworkManager"
+        tags: ["network", "setup", "troubleshoot"]
+
+  tools:
+    name: "Must have tools"
+    description: ""
+    order: 11
+    icon: "📦"
+    tools:
+      - name: "Gear Lever"
+        description: "Integrate and Manages AppImages"
+        command: "flatpak install -y flathub it.mijorus.gearlever"
+        tags: ["appimages", "tool", "gearlever"]
         requires: ["flatpak"]
-        
-      - name: "ONLYOFFICE (Flatpak)"
-        description: "Modern office suite with Microsoft Office compatibility"
-        command: "flatpak install -y flathub org.onlyoffice.desktopeditors"
-        tags: ["office", "documents", "microsoft-compatible", "flatpak"]
+
+      - name: "Warehouse"
+        description: "Flatpak Manager"
+        command: "flatpak install -y flathub io.github.flattool.Warehouse"
+        tags: ["appimages", "tool", "gearlever"]
         requires: ["flatpak"]
+
+      - name: "ARK"
+        description: "Archiv_ZIP"
+        command: "sudo pacman -S --noconfirm ark"
+        tags: ["zip", "archive", "ark"]
