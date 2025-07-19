@@ -1,6 +1,6 @@
 """
 Configuration Manager
-Handles GitHub config download and local caching with YAML format
+Handles GitHub config download and local caching with YAML format and validation
 """
 
 import requests
@@ -12,6 +12,14 @@ import yaml
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+
+# Schema validation (optional dependency)
+try:
+    import jsonschema
+    JSONSCHEMA_AVAILABLE = True
+except ImportError:
+    JSONSCHEMA_AVAILABLE = False
+    print("📝 Info: jsonschema nicht installiert - Schema-Validation deaktiviert")
 
 @dataclass
 class ConfigItem:
@@ -45,6 +53,79 @@ class ConfigCategory:
             self.items = []
 
 class ConfigManager:
+    # Schema für Konfigurationsvalidierung
+    CONFIG_SCHEMA = {
+        "type": "object",
+        "required": ["categories"],
+        "properties": {
+            "version": {"type": "string"},
+            "description": {"type": "string"},
+            "author": {"type": "string"},
+            "last_updated": {"type": "string"},
+            "categories": {
+                "type": "object",
+                "patternProperties": {
+                    "^[a-zA-Z_][a-zA-Z0-9_]*$": {  # Valid category IDs
+                        "type": "object",
+                        "required": ["name", "tools"],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                            },
+                            "description": {"type": "string"},
+                            "order": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9999
+                            },
+                            "icon": {"type": "string"},
+                            "tools": {
+                                "type": "array",
+                                "minItems": 0,
+                                "items": {
+                                    "type": "object",
+                                    "required": ["name", "description", "command"],
+                                    "properties": {
+                                        "name": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 200
+                                        },
+                                        "description": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 1000
+                                        },
+                                        "command": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 2000
+                                        },
+                                        "tags": {
+                                            "type": "array",
+                                            "items": {"type": "string"}
+                                        },
+                                        "requires": {
+                                            "type": "array",
+                                            "items": {"type": "string"}
+                                        },
+                                        "optional": {"type": "boolean"}
+                                    },
+                                    "additionalProperties": False
+                                }
+                            }
+                        },
+                        "additionalProperties": False
+                    }
+                },
+                "additionalProperties": False
+            }
+        },
+        "additionalProperties": True  # Allow additional metadata
+    }
+
     def __init__(self, github_url: str = None, cache_path: str = "data/config_cache.yaml"):
         # Verwende die echte GitHub URL
         self.github_url = github_url or "https://raw.githubusercontent.com/tobayashi-san/arch-helper-tool/refs/heads/main/config.yaml"
@@ -57,6 +138,24 @@ class ConfigManager:
 
         self.config_data: Dict[str, ConfigCategory] = {}
         self.last_update: Optional[datetime] = None
+        self.validation_enabled = JSONSCHEMA_AVAILABLE
+
+    def validate_config(self, config_data: dict) -> Tuple[bool, str]:
+        """Validiere Konfiguration gegen Schema"""
+        if not self.validation_enabled:
+            return True, "Schema-Validation deaktiviert (jsonschema nicht verfügbar)"
+
+        try:
+            jsonschema.validate(config_data, self.CONFIG_SCHEMA)
+            return True, "Konfiguration ist gültig"
+        except jsonschema.ValidationError as e:
+            error_path = " -> ".join(str(p) for p in e.absolute_path)
+            error_msg = f"Validierungsfehler in '{error_path}': {e.message}"
+            return False, error_msg
+        except jsonschema.SchemaError as e:
+            return False, f"Schema-Fehler: {e.message}"
+        except Exception as e:
+            return False, f"Unerwarteter Validierungsfehler: {str(e)}"
 
     def get_file_hash(self, content: str) -> str:
         """Generate SHA256 hash of content"""
@@ -103,7 +202,7 @@ class ConfigManager:
         try:
             # Request mit Timeout und User-Agent
             headers = {
-                'User-Agent': 'Arch-Config-Tool/1.0',
+                'User-Agent': 'Arch-Config-Tool/2.0',
                 'Accept': 'application/x-yaml,text/yaml,text/plain,*/*'
             }
 
@@ -123,9 +222,17 @@ class ConfigManager:
 
             # Überprüfe ob es eine gültige YAML ist
             try:
-                yaml.safe_load(config_content)
-            except yaml.YAMLError:
-                raise ValueError("Ungültiges YAML-Format")
+                config_data = yaml.safe_load(config_content)
+            except yaml.YAMLError as e:
+                raise ValueError(f"Ungültiges YAML-Format: {e}")
+
+            # Schema-Validation
+            is_valid, validation_msg = self.validate_config(config_data)
+            if not is_valid:
+                print(f"⚠️  Validierungswarnung: {validation_msg}")
+                # Warnung statt Fehler - erlaubt Weiterarbeit mit ungültigem Schema
+            else:
+                print("✅ Schema-Validation erfolgreich")
 
             print("✅ Konfiguration erfolgreich heruntergeladen")
 
@@ -137,7 +244,9 @@ class ConfigManager:
                 'last_download': datetime.now().isoformat(),
                 'content_hash': self.get_file_hash(config_content),
                 'url': self.github_url,
-                'size': len(config_content)
+                'size': len(config_content),
+                'validation_status': 'valid' if is_valid else 'invalid',
+                'validation_message': validation_msg
             }
             self.save_version_info(version_info)
 
@@ -179,7 +288,7 @@ class ConfigManager:
                 return True  # Keine Versionsinformationen = Update nötig
 
             # Download nur Header für Hash-Vergleich (effizienter)
-            headers = {'User-Agent': 'Arch-Config-Tool/1.0'}
+            headers = {'User-Agent': 'Arch-Config-Tool/2.0'}
             response = requests.head(self.github_url, headers=headers, timeout=10)
 
             # Wenn HEAD nicht unterstützt wird, mache einen schnellen GET
@@ -223,6 +332,11 @@ class ConfigManager:
             print("❌ YAML muss ein Dictionary sein")
             return {}
 
+        # Validate parsed config
+        is_valid, validation_msg = self.validate_config(config_data)
+        if not is_valid:
+            print(f"⚠️  Konfigurationsvalidierung: {validation_msg}")
+
         categories = {}
 
         # Parse categories
@@ -233,11 +347,21 @@ class ConfigManager:
                 print(f"⚠️  Kategorie {category_id} übersprungen (kein Dictionary)")
                 continue
 
+            # Validate category ID
+            if not category_id.replace('_', '').replace('-', '').isalnum():
+                print(f"⚠️  Kategorie {category_id} hat ungültige ID")
+                continue
+
             # Extract category metadata
             category_name = category_info.get('name', category_id.replace('_', ' ').title())
             category_description = category_info.get('description', '')
             category_order = category_info.get('order', 999)
             category_icon = category_info.get('icon', '')
+
+            # Validate category data
+            if not category_name.strip():
+                print(f"⚠️  Kategorie {category_id} hat keinen Namen")
+                continue
 
             # Create category
             category = ConfigCategory(
@@ -269,6 +393,19 @@ class ConfigManager:
                     print(f"⚠️  Tool in {category_id} übersprungen (fehlende Pflichtfelder)")
                     continue
 
+                # Validate field lengths
+                if len(name) > 200:
+                    print(f"⚠️  Tool '{name[:30]}...' in {category_id}: Name zu lang")
+                    continue
+
+                if len(description) > 1000:
+                    print(f"⚠️  Tool '{name}' in {category_id}: Beschreibung zu lang")
+                    continue
+
+                if len(command) > 2000:
+                    print(f"⚠️  Tool '{name}' in {category_id}: Befehl zu lang")
+                    continue
+
                 # Optional fields
                 tags = tool_info.get('tags', [])
                 requires = tool_info.get('requires', [])
@@ -280,6 +417,10 @@ class ConfigManager:
                 if not isinstance(requires, list):
                     requires = []
 
+                # Validate tags and requires
+                tags = [tag for tag in tags if isinstance(tag, str) and tag.strip()]
+                requires = [req for req in requires if isinstance(req, str) and req.strip()]
+
                 # Create config item
                 config_item = ConfigItem(
                     name=name,
@@ -288,7 +429,7 @@ class ConfigManager:
                     category=category_id,
                     tags=tags,
                     requires=requires,
-                    optional=optional
+                    optional=bool(optional)
                 )
 
                 category.items.append(config_item)
@@ -372,12 +513,18 @@ class ConfigManager:
         if not self.config_data:
             return {}
 
+        # Version info
+        version_info = self.load_version_info()
+
         stats = {
             'total_categories': len(self.config_data),
             'total_tools': sum(len(cat.items) for cat in self.config_data.values()),
             'last_update': self.last_update.isoformat() if self.last_update else None,
             'cache_path': self.cache_path,
-            'github_url': self.github_url
+            'github_url': self.github_url,
+            'validation_enabled': self.validation_enabled,
+            'validation_status': version_info.get('validation_status', 'unknown'),
+            'validation_message': version_info.get('validation_message', 'Keine Validierung durchgeführt')
         }
 
         # Category breakdown
@@ -393,152 +540,72 @@ class ConfigManager:
 
         return stats
 
+    def export_config(self, export_path: str) -> bool:
+        """Export current configuration to file"""
+        try:
+            if not self.config_data:
+                return False
 
-# Test function mit Beispiel-YAML-Konfiguration
+            # Create export structure
+            export_data = {
+                'version': '2.0',
+                'description': 'Exported Arch Linux Configuration',
+                'exported_at': datetime.now().isoformat(),
+                'categories': {}
+            }
+
+            for cat_id, category in self.config_data.items():
+                export_data['categories'][cat_id] = {
+                    'name': category.name,
+                    'description': category.description,
+                    'order': category.order,
+                    'icon': category.icon,
+                    'tools': []
+                }
+
+                for item in category.items:
+                    tool_data = {
+                        'name': item.name,
+                        'description': item.description,
+                        'command': item.command,
+                        'tags': item.tags,
+                        'requires': item.requires,
+                        'optional': item.optional
+                    }
+                    export_data['categories'][cat_id]['tools'].append(tool_data)
+
+            # Save to file
+            with open(export_path, 'w', encoding='utf-8') as f:
+                yaml.dump(export_data, f, default_flow_style=False, allow_unicode=True, indent=2)
+
+            print(f"✅ Konfiguration exportiert nach: {export_path}")
+            return True
+
+        except Exception as e:
+            print(f"❌ Fehler beim Export: {e}")
+            return False
+
+
+# Test function (reduziert)
 if __name__ == "__main__":
-    # Beispiel-YAML-Konfiguration für Tests
-    example_config = """# Arch Linux Configuration Tool
-# YAML Configuration File
-version: "1.0"
-description: "Configuration for Arch Linux setup and maintenance"
-
-categories:
-  system_maintenance:
-    name: "System Maintenance"
-    description: "Essential system maintenance tasks"
-    order: 1
-    icon: "🔧"
-    tools:
-      - name: "System Update"
-        description: "Full system update with pacman"
-        command: "sudo pacman -Syu --noconfirm"
-        tags: ["update", "system", "pacman"]
-
-      - name: "Clean Package Cache"
-        description: "Remove old cached packages to free space"
-        command: "sudo pacman -Sc --noconfirm"
-        tags: ["cleanup", "cache"]
-
-      - name: "Remove Orphans"
-        description: "Clean orphaned packages"
-        command: "sudo pacman -Rns $(pacman -Qtdq) --noconfirm || echo 'No orphaned packages found'"
-        tags: ["cleanup", "orphans"]
-
-      - name: "Update Mirrorlist"
-        description: "Optimize package mirrors with reflector"
-        command: "sudo reflector --latest 20 --protocol https --sort rate --save /etc/pacman.d/mirrorlist"
-        tags: ["mirrors", "optimization"]
-        requires: ["reflector"]
-
-  graphics:
-    name: "Graphics Drivers"
-    description: "Install and configure graphics drivers"
-    order: 2
-    icon: "🖥️"
-    tools:
-      - name: "NVIDIA Open Drivers"
-        description: "Open-source NVIDIA drivers (recommended)"
-        command: "sudo pacman -S --noconfirm nvidia-open nvidia-utils"
-        tags: ["nvidia", "drivers", "open-source"]
-        requires: ["nvidia-hardware"]
-
-      - name: "NVIDIA Proprietary"
-        description: "Proprietary NVIDIA drivers"
-        command: "sudo pacman -S --noconfirm nvidia nvidia-utils"
-        tags: ["nvidia", "drivers", "proprietary"]
-        requires: ["nvidia-hardware"]
-
-      - name: "AMD Drivers"
-        description: "AMD graphics drivers (MESA)"
-        command: "sudo pacman -S --noconfirm mesa vulkan-radeon"
-        tags: ["amd", "drivers", "mesa"]
-        requires: ["amd-hardware"]
-
-  development:
-    name: "Development Tools"
-    description: "Essential development and programming tools"
-    order: 3
-    icon: "💻"
-    tools:
-      - name: "Git"
-        description: "Distributed version control system"
-        command: "sudo pacman -S --noconfirm git"
-        tags: ["git", "vcs", "development"]
-
-      - name: "Visual Studio Code"
-        description: "Popular code editor from Microsoft"
-        command: "yay -S --noconfirm visual-studio-code-bin"
-        tags: ["editor", "ide", "microsoft"]
-        requires: ["aur-helper"]
-
-      - name: "Docker"
-        description: "Container platform for development"
-        command: "sudo pacman -S --noconfirm docker docker-compose"
-        tags: ["docker", "containers", "devops"]
-
-      - name: "Node.js"
-        description: "JavaScript runtime for development"
-        command: "sudo pacman -S --noconfirm nodejs npm"
-        tags: ["nodejs", "javascript", "npm"]
-
-  multimedia:
-    name: "Multimedia"
-    description: "Audio, video and multimedia applications"
-    order: 4
-    icon: "🎵"
-    tools:
-      - name: "VLC Media Player"
-        description: "Versatile multimedia player"
-        command: "sudo pacman -S --noconfirm vlc"
-        tags: ["video", "audio", "player"]
-
-      - name: "OBS Studio"
-        description: "Open-source streaming and recording"
-        command: "sudo pacman -S --noconfirm obs-studio"
-        tags: ["streaming", "recording", "obs"]
-        optional: true
-"""
-
-    # Test mit Beispiel-YAML-Konfiguration
-    print("🧪 Teste YAML ConfigManager...")
+    print("🧪 Teste ConfigManager mit Schema-Validation...")
 
     manager = ConfigManager()
 
-    # Simuliere Cache mit Beispiel-Config
-    manager.save_cached_config(example_config)
-
-    # Lade und parse Konfiguration
+    # Test mit realer Konfiguration
     config = manager.get_config()
 
-    # Zeige Statistiken
-    stats = manager.get_stats()
-    print(f"\n📊 Statistiken:")
-    print(f"   Kategorien: {stats['total_categories']}")
-    print(f"   Tools: {stats['total_tools']}")
+    if config:
+        print(f"\n✅ Konfiguration geladen:")
+        stats = manager.get_stats()
+        print(f"   📊 Kategorien: {stats['total_categories']}")
+        print(f"   🛠️  Tools: {stats['total_tools']}")
+        print(f"   🔍 Validation: {stats['validation_status']}")
 
-    # Zeige Kategorien
-    print(f"\n📋 Kategorien:")
-    for category in manager.get_categories():
-        print(f"   {category.icon} {category.name} ({len(category.items)} Tools)")
-        print(f"     {category.description}")
-        for item in category.items[:2]:  # Nur erste 2 Tools zeigen
-            tags_str = f" [{', '.join(item.tags)}]" if item.tags else ""
-            print(f"     - {item.name}: {item.description}{tags_str}")
-        if len(category.items) > 2:
-            print(f"     ... und {len(category.items) - 2} weitere")
-        print()
+        # Test Export
+        if manager.export_config("data/exported_config.yaml"):
+            print("   📤 Export erfolgreich")
+    else:
+        print("❌ Keine Konfiguration verfügbar")
 
-    # Test Suche
-    search_results = manager.search_tools("git")
-    print(f"🔍 Suche nach 'git': {len(search_results)} Ergebnisse")
-    for result in search_results:
-        category = manager.config_data[result.category]
-        print(f"   - {result.name} ({category.name})")
-
-    # Test Tags
-    print(f"\n🏷️  Alle verfügbaren Tags:")
-    all_tags = set()
-    for category in manager.config_data.values():
-        for item in category.items:
-            all_tags.update(item.tags)
-    print(f"   {', '.join(sorted(all_tags))}")
+    print("\n✅ ConfigManager Test abgeschlossen!")
