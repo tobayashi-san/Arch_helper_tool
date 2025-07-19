@@ -91,7 +91,10 @@ categories:
 
       - name: "Virtual Machine"
         description: "All necessary packages to run and manage virtual machines with Virt Manager"
-        command: "sudo pacman -S --noconfirm qemu-full virt-manager virt-install edk2-ovmf libvirt dnsmasq bridge-utils libosinfo swtpm guestfs-tools virt-viewer && sudo systemctl enable --now libvirtd && sudo usermod -aG libvirt,kvm "$(logname)""
+        ccommand: >
+        sudo pacman -S --noconfirm qemu-full virt-manager virt-install edk2-ovmf libvirt dnsmasq bridge-utils libosinfo swtpm guestfs-tools virt-viewer &&
+        sudo systemctl enable --now libvirtd &&
+        sudo usermod -aG libvirt,kvm "$(logname)"
         tags: ["virtualization", "kvm", "libvirt", "qemu"]
 
   multimedia:
