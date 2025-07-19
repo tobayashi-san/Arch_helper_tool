@@ -1,0 +1,100 @@
+# Arch Linux Configuration Tool
+# YAML Configuration File
+version: "1.0"
+description: "Configuration for Arch Linux setup and maintenance"
+
+categories:
+  system_maintenance:
+    name: "System Maintenance"
+    description: "Essential system maintenance tasks"
+    order: 1
+    icon: "🔧"
+    tools:
+      - name: "System Update"
+        description: "Full system update with pacman"
+        command: "sudo pacman -Syu --noconfirm"
+        tags: ["update", "system", "pacman"]
+
+      - name: "Clean Package Cache"
+        description: "Remove old cached packages to free space"
+        command: "sudo pacman -Sc --noconfirm"
+        tags: ["cleanup", "cache"]
+
+      - name: "Remove Orphans"
+        description: "Clean orphaned packages"
+        command: "sudo pacman -Rns $(pacman -Qtdq) --noconfirm || echo 'No orphaned packages found'"
+        tags: ["cleanup", "orphans"]
+
+      - name: "Update Mirrorlist"
+        description: "Optimize package mirrors with reflector"
+        command: "sudo reflector --latest 20 --protocol https --sort rate --save /etc/pacman.d/mirrorlist"
+        tags: ["mirrors", "optimization"]
+        requires: ["reflector"]
+
+  graphics:
+    name: "Graphics Drivers"
+    description: "Install and configure graphics drivers"
+    order: 2
+    icon: "🖥️"
+    tools:
+      - name: "NVIDIA Open Drivers"
+        description: "Open-source NVIDIA drivers (recommended)"
+        command: "sudo pacman -S --noconfirm nvidia-open nvidia-utils"
+        tags: ["nvidia", "drivers", "open-source"]
+        requires: ["nvidia-hardware"]
+
+      - name: "NVIDIA Proprietary"
+        description: "Proprietary NVIDIA drivers"
+        command: "sudo pacman -S --noconfirm nvidia nvidia-utils"
+        tags: ["nvidia", "drivers", "proprietary"]
+        requires: ["nvidia-hardware"]
+
+      - name: "AMD Drivers"
+        description: "AMD graphics drivers (MESA)"
+        command: "sudo pacman -S --noconfirm mesa vulkan-radeon"
+        tags: ["amd", "drivers", "mesa"]
+        requires: ["amd-hardware"]
+
+  development:
+    name: "Development Tools"
+    description: "Essential development and programming tools"
+    order: 3
+    icon: "💻"
+    tools:
+      - name: "Git"
+        description: "Distributed version control system"
+        command: "sudo pacman -S --noconfirm git"
+        tags: ["git", "vcs", "development"]
+
+      - name: "Visual Studio Code"
+        description: "Popular code editor from Microsoft"
+        command: "yay -S --noconfirm visual-studio-code-bin"
+        tags: ["editor", "ide", "microsoft"]
+        requires: ["aur-helper"]
+
+      - name: "Docker"
+        description: "Container platform for development"
+        command: "sudo pacman -S --noconfirm docker docker-compose"
+        tags: ["docker", "containers", "devops"]
+
+      - name: "Node.js"
+        description: "JavaScript runtime for development"
+        command: "sudo pacman -S --noconfirm nodejs npm"
+        tags: ["nodejs", "javascript", "npm"]
+
+  multimedia:
+    name: "Multimedia"
+    description: "Audio, video and multimedia applications"
+    order: 4
+    icon: "🎵"
+    tools:
+      - name: "VLC Media Player"
+        description: "Versatile multimedia player"
+        command: "sudo pacman -S --noconfirm vlc"
+        tags: ["video", "audio", "player"]
+
+      - name: "OBS Studio"
+        description: "Open-source streaming and recording"
+        command: "sudo pacman -S --noconfirm obs-studio"
+        tags: ["streaming", "recording", "obs"]
+        optional: true

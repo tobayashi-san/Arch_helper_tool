@@ -1,0 +1,1414 @@
+"""
+Main Window
+Primary Qt6 application window with full functionality
+"""
+
+import sys
+import os
+from typing import Dict, List, Optional
+from PyQt6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QLabel, QPushButton, QTextEdit, QListWidget, QListWidgetItem,
+    QSplitter, QGroupBox, QProgressBar, QLineEdit, QComboBox,
+    QMessageBox, QDialog, QDialogButtonBox, QCheckBox, QScrollArea,
+    QFrame, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView
+)
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
+from PyQt6.QtGui import QFont, QPixmap, QIcon, QPalette, QColor
+
+# Import our backend modules
+try:
+    from core.dependency_check import DependencyChecker
+    from core.config_manager import ConfigManager, ConfigCategory, ConfigItem
+    from core.command_executor import CommandExecutor, CommandResult, CommandStatus
+except ImportError:
+    # Fallback für relative imports
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+    from core.dependency_check import DependencyChecker
+    from core.config_manager import ConfigManager, ConfigCategory, ConfigItem
+    from core.command_executor import CommandExecutor, CommandResult, CommandStatus
+
+class DependencyCheckDialog(QDialog):
+    """Dialog for dependency checking at startup"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Dependency Check")
+        self.setModal(True)
+        self.setFixedSize(500, 400)
+
+        self.dependency_checker = DependencyChecker(self)
+        self.setup_ui()
+        self.run_check()
+
+    def setup_ui(self):
+        layout = QVBoxLayout()
+
+        # Title
+        title = QLabel("🔍 Überprüfe System-Abhängigkeiten...")
+        title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        # Progress
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)  # Indeterminate
+        layout.addWidget(self.progress)
+
+        # Output
+        self.output = QTextEdit()
+        self.output.setReadOnly(True)
+        self.output.setFont(QFont("Consolas", 10))
+        layout.addWidget(self.output)
+
+        # Buttons
+        self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        self.button_box.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
+        self.button_box.accepted.connect(self.accept)
+        layout.addWidget(self.button_box)
+
+        self.setLayout(layout)
+
+    def run_check(self):
+        """Run dependency check in background"""
+        self.output.append("🚀 Starte Dependency Check...\n")
+
+        # Run check (this should be moved to a worker thread in production)
+        success = self.dependency_checker.run_startup_check()
+
+        if success:
+            self.output.append("\n✅ Dependency Check erfolgreich abgeschlossen!")
+            self.progress.setRange(0, 1)
+            self.progress.setValue(1)
+        else:
+            self.output.append("\n❌ Dependency Check fehlgeschlagen!")
+
+        self.button_box.button(QDialogButtonBox.StandardButton.Ok).setEnabled(True)
+
+class PasswordDialog(QDialog):
+    """Dialog for sudo password input"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Sudo Password Required")
+        self.setModal(True)
+        self.setFixedSize(400, 150)
+
+        layout = QVBoxLayout()
+
+        # Info label
+        info_label = QLabel("Please enter your sudo password:")
+        info_label.setFont(QFont("Arial", 12))
+        layout.addWidget(info_label)
+
+        # Password input
+        from PyQt6.QtWidgets import QLineEdit
+        self.password_input = QLineEdit()
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_input.setFont(QFont("Arial", 12))
+        self.password_input.setStyleSheet("""
+            QLineEdit {
+                padding: 8px;
+                border: 2px solid #007bff;
+                border-radius: 6px;
+                font-size: 12px;
+            }
+        """)
+        self.password_input.returnPressed.connect(self.accept)
+        layout.addWidget(self.password_input)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                padding: 8px 16px;
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #e9ecef;
+            }
+        """)
+        button_layout.addWidget(cancel_btn)
+
+        ok_btn = QPushButton("OK")
+        ok_btn.clicked.connect(self.accept)
+        ok_btn.setDefault(True)
+        ok_btn.setStyleSheet("""
+            QPushButton {
+                padding: 8px 16px;
+                background-color: #007bff;
+                color: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """)
+        button_layout.addWidget(ok_btn)
+
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+        # Focus on password input
+        self.password_input.setFocus()
+
+    def get_password(self):
+        """Get the entered password"""
+        return self.password_input.text()
+
+class CommandExecutionDialog(QDialog):
+    """Enhanced dialog for command execution with GUI sudo"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Befehl ausführen")
+        self.setModal(True)
+        self.resize(700, 500)
+
+        self.sudo_password = None
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QVBoxLayout()
+
+        # Command info
+        self.command_label = QLabel()
+        self.command_label.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.command_label.setWordWrap(True)
+        layout.addWidget(self.command_label)
+
+        # Progress
+        self.progress_label = QLabel("Bereit...")
+        layout.addWidget(self.progress_label)
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)  # Indeterminate during execution
+        layout.addWidget(self.progress)
+
+        # Output area
+        output_group = QGroupBox("Ausgabe")
+        output_layout = QVBoxLayout()
+
+        self.output = QTextEdit()
+        self.output.setReadOnly(True)
+        self.output.setFont(QFont("Consolas", 9))
+        self.output.setStyleSheet("background-color: #2b2b2b; color: #ffffff;")
+        output_layout.addWidget(self.output)
+
+        output_group.setLayout(output_layout)
+        layout.addWidget(output_group)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        self.cancel_button = QPushButton("Abbrechen")
+        self.cancel_button.clicked.connect(self.cancel_command)
+        button_layout.addWidget(self.cancel_button)
+
+        button_layout.addStretch()
+
+        self.close_button = QPushButton("Schließen")
+        self.close_button.clicked.connect(self.accept)
+        self.close_button.setEnabled(False)
+        button_layout.addWidget(self.close_button)
+
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+class CommandWorker(QThread):
+    """Worker thread for command execution"""
+
+    output_ready = pyqtSignal(str, str)  # output_type, text
+    finished = pyqtSignal(int, str, str)  # return_code, stdout, stderr
+
+    def __init__(self, command, sudo_password=None):
+        super().__init__()
+        self.command = command
+        self.sudo_password = sudo_password
+        self.should_stop = False
+
+    def run(self):
+        """Execute command in worker thread"""
+        try:
+            import subprocess
+            import os
+            import tempfile
+
+            if 'sudo' in self.command and self.sudo_password:
+                # Create temporary script for sudo
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+                    f.write(f"#!/bin/bash\necho '{self.sudo_password}' | sudo -S {self.command.replace('sudo ', '')}")
+                    script_path = f.name
+
+                os.chmod(script_path, 0o755)
+
+                # Execute script
+                process = subprocess.Popen(
+                    ['bash', script_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+
+                # Read output line by line
+                stdout_lines = []
+                stderr_lines = []
+
+                # Read stdout
+                for line in iter(process.stdout.readline, ''):
+                    if self.should_stop:
+                        process.terminate()
+                        break
+                    if line:
+                        clean_line = line.rstrip()
+                        if clean_line and self.sudo_password not in clean_line:
+                            stdout_lines.append(clean_line)
+                            self.output_ready.emit('stdout', clean_line)
+
+                # Read stderr
+                for line in iter(process.stderr.readline, ''):
+                    if self.should_stop:
+                        break
+                    if line:
+                        clean_line = line.rstrip()
+                        if clean_line and self.sudo_password not in clean_line:
+                            stderr_lines.append(clean_line)
+                            self.output_ready.emit('stderr', clean_line)
+
+                return_code = process.wait()
+
+                # Clean up
+                try:
+                    os.unlink(script_path)
+                except:
+                    pass
+
+            else:
+                # Regular command
+                process = subprocess.Popen(
+                    self.command,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+
+                stdout, stderr = process.communicate()
+                return_code = process.returncode
+
+                # Emit line by line
+                if stdout:
+                    for line in stdout.split('\n'):
+                        if line.strip():
+                            self.output_ready.emit('stdout', line)
+
+                if stderr:
+                    for line in stderr.split('\n'):
+                        if line.strip():
+                            self.output_ready.emit('stderr', line)
+
+            self.finished.emit(return_code, '', '')
+
+        except Exception as e:
+            self.output_ready.emit('stderr', f"Fehler: {str(e)}")
+            self.finished.emit(-1, '', str(e))
+
+    def stop(self):
+        """Stop the worker thread"""
+        self.should_stop = True
+
+class CommandExecutionDialog(QDialog):
+    """Enhanced dialog for command execution with threaded execution"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Befehl ausführen")
+        self.setModal(True)
+        self.resize(700, 500)
+
+        self.sudo_password = None
+        self.worker = None
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QVBoxLayout()
+
+        # Command info
+        self.command_label = QLabel()
+        self.command_label.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.command_label.setWordWrap(True)
+        layout.addWidget(self.command_label)
+
+        # Progress
+        self.progress_label = QLabel("Bereit...")
+        layout.addWidget(self.progress_label)
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)  # Indeterminate during execution
+        layout.addWidget(self.progress)
+
+        # Output area
+        output_group = QGroupBox("Ausgabe")
+        output_layout = QVBoxLayout()
+
+        self.output = QTextEdit()
+        self.output.setReadOnly(True)
+        self.output.setFont(QFont("Consolas", 9))
+        self.output.setStyleSheet("background-color: #2b2b2b; color: #ffffff;")
+        output_layout.addWidget(self.output)
+
+        output_group.setLayout(output_layout)
+        layout.addWidget(output_group)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        self.cancel_button = QPushButton("Abbrechen")
+        self.cancel_button.clicked.connect(self.cancel_command)
+        button_layout.addWidget(self.cancel_button)
+
+        button_layout.addStretch()
+
+        self.close_button = QPushButton("Schließen")
+        self.close_button.clicked.connect(self.accept)
+        self.close_button.setEnabled(False)
+        button_layout.addWidget(self.close_button)
+
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+    def execute_command(self, command: str, description: str = ""):
+        """Execute a command with GUI sudo password"""
+        self.current_command = command  # Store for history
+        self.command_label.setText(f"Befehl: {command}")
+        if description:
+            self.command_label.setText(f"{description}\nBefehl: {command}")
+
+        self.output.clear()
+        self.cancel_button.setEnabled(True)
+        self.close_button.setEnabled(False)
+
+        # Check if command needs sudo
+        if 'sudo' in command:
+            if not self.sudo_password:
+                # Ask for password
+                password_dialog = PasswordDialog(self)
+                if password_dialog.exec() == QDialog.DialogCode.Accepted:
+                    self.sudo_password = password_dialog.get_password()
+                else:
+                    self.output.append("Abgebrochen - Sudo-Passwort erforderlich")
+                    self.close_button.setEnabled(True)
+                    self.cancel_button.setEnabled(False)
+                    return
+
+        # Start worker thread
+        self.progress_label.setText("Führe Befehl aus...")
+        self.worker = CommandWorker(command, self.sudo_password)
+        self.worker.output_ready.connect(self.on_output_received)
+        self.worker.finished.connect(self.on_command_finished)
+        self.worker.start()
+
+    def on_output_received(self, output_type: str, text: str):
+        """Handle real-time output from worker"""
+        if output_type == 'stdout':
+            self.output.append(f"<span style='color: #00ff00;'>{text}</span>")
+        else:  # stderr
+            self.output.append(f"<span style='color: #ff6666;'>{text}</span>")
+
+        # Scroll to bottom
+        scrollbar = self.output.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    def on_command_finished(self, return_code: int, stdout: str, stderr: str):
+        """Handle command completion"""
+        self.progress.setRange(0, 1)
+        self.progress.setValue(1)
+
+        if return_code == 0:
+            self.progress_label.setText("✅ Erfolgreich abgeschlossen")
+            self.output.append(f"\n<span style='color: #00ff00; font-weight: bold;'>✅ Befehl erfolgreich ausgeführt</span>")
+            status = "SUCCESS"
+        else:
+            self.progress_label.setText("❌ Fehlgeschlagen")
+            self.output.append(f"\n<span style='color: #ff6666; font-weight: bold;'>❌ Befehl fehlgeschlagen (Exit Code: {return_code})</span>")
+            status = "FAILED"
+
+        self.cancel_button.setEnabled(False)
+        self.close_button.setEnabled(True)
+
+        # Add to history (emit signal to parent)
+        if hasattr(self.parent(), 'add_command_to_history'):
+            from datetime import datetime
+            command_data = {
+                'time': datetime.now().strftime("%H:%M:%S"),
+                'command': getattr(self, 'current_command', 'Unknown'),
+                'status': status,
+                'return_code': return_code,
+                'execution_time': getattr(self.worker, 'execution_time', 0.0)
+            }
+            self.parent().add_command_to_history(command_data)
+
+        # Clean up worker
+        if self.worker:
+            self.worker.deleteLater()
+            self.worker = None
+
+    def cancel_command(self):
+        """Cancel the running command"""
+        if self.worker and self.worker.isRunning():
+            self.worker.stop()
+            self.worker.terminate()
+            self.worker.wait(1000)  # Wait up to 1 second
+
+        self.cancel_button.setEnabled(False)
+        self.close_button.setEnabled(True)
+        self.output.append("Befehl abgebrochen.")
+        self.progress_label.setText("Abgebrochen")
+
+class CategoryWidget(QWidget):
+    """Beautiful widget for displaying category tools with multi-selection"""
+
+    tool_selected = pyqtSignal(object)  # ConfigItem
+
+    def __init__(self, category: ConfigCategory):
+        super().__init__()
+        self.category = category
+        self.selected_tools = {}  # Dict instead of set: {tool_name: ConfigItem}
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QVBoxLayout()
+        layout.setSpacing(15)
+
+        # Beautiful category header with gradient
+        header_widget = QWidget()
+        header_widget.setStyleSheet("""
+            QWidget {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #667eea, stop:1 #764ba2);
+                border-radius: 12px;
+                padding: 8px;
+            }
+        """)
+
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(20, 15, 20, 15)
+
+        # Icon with better styling (removed text-shadow)
+        if self.category.icon:
+            icon_label = QLabel(self.category.icon)
+            icon_label.setFont(QFont("Arial", 28))
+            icon_label.setStyleSheet("""
+                color: white;
+                background: transparent;
+            """)
+            header_layout.addWidget(icon_label)
+
+        # Title and description
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(5)
+
+        title = QLabel(self.category.name)
+        title.setFont(QFont("Arial", 18, QFont.Weight.Bold))
+        title.setStyleSheet("""
+            color: white;
+            background: transparent;
+        """)
+        text_layout.addWidget(title)
+
+        if self.category.description:
+            desc = QLabel(self.category.description)
+            desc.setFont(QFont("Arial", 12))
+            desc.setStyleSheet("""
+                color: rgba(255,255,255,0.9);
+                background: transparent;
+            """)
+            desc.setWordWrap(True)
+            text_layout.addWidget(desc)
+
+        header_layout.addLayout(text_layout)
+        header_layout.addStretch()
+
+        # Beautiful tool count badge
+        count_label = QLabel(f"{len(self.category.items)} Tools")
+        count_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        count_label.setStyleSheet("""
+            background-color: rgba(255,255,255,0.2);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+        """)
+        header_layout.addWidget(count_label)
+
+        header_widget.setLayout(header_layout)
+        layout.addWidget(header_widget)
+
+        # Selection controls
+        controls_layout = QHBoxLayout()
+
+        # Select all/none buttons with better styling
+        self.select_all_btn = QPushButton("🔘 Alle auswählen")
+        self.select_all_btn.clicked.connect(self.select_all_tools)
+        self.select_all_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e3f2fd;
+                border: 2px solid #2196f3;
+                border-radius: 8px;
+                padding: 8px 16px;
+                font-size: 12px;
+                font-weight: bold;
+                color: #1976d2;
+            }
+            QPushButton:hover {
+                background-color: #bbdefb;
+                border-color: #1976d2;
+            }
+        """)
+        controls_layout.addWidget(self.select_all_btn)
+
+        self.select_none_btn = QPushButton("⭕ Alle abwählen")
+        self.select_none_btn.clicked.connect(self.select_no_tools)
+        self.select_none_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ffebee;
+                border: 2px solid #f44336;
+                border-radius: 8px;
+                padding: 8px 16px;
+                font-size: 12px;
+                font-weight: bold;
+                color: #d32f2f;
+            }
+            QPushButton:hover {
+                background-color: #ffcdd2;
+                border-color: #d32f2f;
+            }
+        """)
+        controls_layout.addWidget(self.select_none_btn)
+
+        controls_layout.addStretch()
+
+        # Selected count
+        self.selected_count_label = QLabel("0 ausgewählt")
+        self.selected_count_label.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.selected_count_label.setStyleSheet("color: #666; padding: 5px;")
+        controls_layout.addWidget(self.selected_count_label)
+
+        # Install selected button
+        self.install_selected_btn = QPushButton("🚀 Ausgewählte installieren")
+        self.install_selected_btn.clicked.connect(self.install_selected_tools)
+        self.install_selected_btn.setEnabled(False)
+        self.install_selected_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #4CAF50, stop:1 #45a049);
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton:hover:enabled {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #45a049, stop:1 #3d8b40);
+            }
+            QPushButton:disabled {
+                background: #cccccc;
+                color: #666666;
+            }
+        """)
+        controls_layout.addWidget(self.install_selected_btn)
+
+        layout.addLayout(controls_layout)
+
+        # Beautiful tools grid
+        tools_widget = QWidget()
+        tools_layout = QVBoxLayout()
+        tools_layout.setSpacing(8)
+
+        for item in self.category.items:
+            tool_widget = self.create_beautiful_tool_widget(item)
+            tools_layout.addWidget(tool_widget)
+
+        tools_widget.setLayout(tools_layout)
+
+        # Scroll area with custom styling
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(tools_widget)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+            QScrollBar:vertical {
+                background: #f1f1f1;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background: #888;
+                border-radius: 6px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #555;
+            }
+        """)
+
+        layout.addWidget(scroll)
+        self.setLayout(layout)
+
+    def get_control_button_style(self) -> str:
+        return """
+            QPushButton {
+                background-color: #f8f9fa;
+                border: 2px solid #dee2e6;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 11px;
+                color: #495057;
+            }
+            QPushButton:hover {
+                background-color: #e9ecef;
+                border-color: #adb5bd;
+            }
+        """
+
+    def create_beautiful_tool_widget(self, item: ConfigItem) -> QWidget:
+        """Create a beautiful, modern tool widget with checkbox"""
+        widget = QWidget()
+
+        # Calculate dynamic height based on content
+        base_height = 80
+        desc_lines = len(item.description) // 50 + 1  # Estimate lines needed
+        tag_height = 25 if item.tags else 0
+        calculated_height = base_height + (desc_lines * 15) + tag_height
+        widget.setMinimumHeight(max(calculated_height, 100))  # At least 100px
+
+        # Modern card styling - no border when selected
+        widget.setStyleSheet("""
+            QWidget {
+                background-color: white;
+                border: 1px solid #e1e5e9;
+                border-radius: 10px;
+                padding: 4px;
+            }
+            QWidget:hover {
+                border-color: #007bff;
+                background-color: #f8fcff;
+            }
+        """)
+
+        layout = QHBoxLayout()
+        layout.setContentsMargins(20, 15, 20, 15)  # More padding for better visibility
+        layout.setSpacing(20)  # More spacing between elements
+
+        # Checkbox for selection - clean and simple
+        checkbox = QCheckBox()
+        checkbox.setText("")
+        checkbox.setFixedSize(25, 25)
+        checkbox.setStyleSheet("""
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border: 2px solid #007bff;
+                border-radius: 3px;
+                background-color: white;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #007bff;
+                border-color: #007bff;
+            }
+            QCheckBox::indicator:hover {
+                border-color: #0056b3;
+            }
+        """)
+        checkbox.toggled.connect(lambda checked: self.on_tool_selection_changed(item, checked))
+        layout.addWidget(checkbox)
+
+        # Tool info with flexible sizing
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(8)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Tool name - always visible
+        name_label = QLabel(item.name)
+        name_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        name_label.setStyleSheet("""
+            color: #212529;
+            background: transparent;
+            padding: 0px;
+            margin: 0px;
+        """)
+        name_label.setWordWrap(True)  # Allow wrapping for long names
+        from PyQt6.QtWidgets import QSizePolicy
+        name_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        info_layout.addWidget(name_label)
+
+        # Description with proper wrapping
+        desc_label = QLabel(item.description)
+        desc_label.setFont(QFont("Arial", 11))
+        desc_label.setStyleSheet("""
+            color: #6c757d;
+            background: transparent;
+            padding: 0px;
+            margin: 0px;
+        """)
+        desc_label.setWordWrap(True)
+        desc_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        info_layout.addWidget(desc_label)
+
+        # Tags with flexible layout
+        if item.tags:
+            tags_widget = QWidget()
+            tags_widget.setFixedHeight(25)  # Fixed height for tags
+            tags_layout = QHBoxLayout()
+            tags_layout.setContentsMargins(0, 0, 0, 0)
+            tags_layout.setSpacing(6)
+
+            for tag in item.tags[:4]:  # Show max 4 tags
+                tag_label = QLabel(tag)
+                tag_label.setFont(QFont("Arial", 9))
+                tag_label.setStyleSheet("""
+                    background-color: #e3f2fd;
+                    color: #1976d2;
+                    padding: 3px 10px;
+                    border-radius: 12px;
+                    border: 1px solid #bbdefb;
+                """)
+                tag_label.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+                tags_layout.addWidget(tag_label)
+
+            if len(item.tags) > 4:
+                more_label = QLabel(f"+{len(item.tags)-4}")
+                more_label.setFont(QFont("Arial", 9))
+                more_label.setStyleSheet("""
+                    background-color: #f5f5f5;
+                    color: #757575;
+                    padding: 3px 8px;
+                    border-radius: 10px;
+                """)
+                tags_layout.addWidget(more_label)
+
+            tags_layout.addStretch()
+            tags_widget.setLayout(tags_layout)
+            info_layout.addWidget(tags_widget)
+
+        # Give the info layout maximum space
+        layout.addLayout(info_layout, 1)
+
+        # Right side elements with fixed widths
+        right_layout = QHBoxLayout()
+        right_layout.setSpacing(10)
+
+        # Requirements warning
+        if item.requires:
+            req_label = QLabel("⚠️")
+            req_label.setFont(QFont("Arial", 18))
+            req_label.setToolTip(f"Requires: {', '.join(item.requires)}")
+            req_label.setStyleSheet("color: #ff9800;")
+            req_label.setFixedSize(25, 25)
+            right_layout.addWidget(req_label)
+
+        # Single install button
+        single_btn = QPushButton("Installieren")
+        single_btn.setFixedSize(90, 35)
+        single_btn.clicked.connect(lambda: self.tool_selected.emit(item))
+        single_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28a745;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+        """)
+        right_layout.addWidget(single_btn)
+
+        layout.addLayout(right_layout)
+
+        widget.setLayout(layout)
+
+        # Store checkbox reference
+        widget.checkbox = checkbox
+        widget.config_item = item
+
+        return widget
+
+    def on_tool_selection_changed(self, item: ConfigItem, checked: bool):
+        """Handle tool selection change"""
+        if checked:
+            self.selected_tools[item.name] = item
+        else:
+            self.selected_tools.pop(item.name, None)
+
+        # Update UI
+        self.update_selection_ui()
+
+        # Update visual state of the widget
+        self.update_widget_selection_state(item, checked)
+
+    def update_widget_selection_state(self, item: ConfigItem, selected: bool):
+        """Update the visual state of a widget when selected/deselected"""
+        # Find the widget for this item
+        tools_scroll = self.layout().itemAt(2).widget()  # ScrollArea
+        tools_widget = tools_scroll.widget()
+
+        for i in range(tools_widget.layout().count()):
+            layout_item = tools_widget.layout().itemAt(i)
+            if layout_item and layout_item.widget():
+                widget = layout_item.widget()
+                if hasattr(widget, 'config_item') and widget.config_item.name == item.name:
+                    if selected:
+                        # Subtle selection styling - just a left border
+                        widget.setStyleSheet("""
+                            QWidget {
+                                background-color: #f8fcff;
+                                border: 1px solid #e1e5e9;
+                                border-left: 4px solid #007bff;
+                                border-radius: 10px;
+                                padding: 4px;
+                            }
+                        """)
+                    else:
+                        # Normal styling
+                        widget.setStyleSheet("""
+                            QWidget {
+                                background-color: white;
+                                border: 1px solid #e1e5e9;
+                                border-radius: 10px;
+                                padding: 4px;
+                            }
+                            QWidget:hover {
+                                border-color: #007bff;
+                                background-color: #f8fcff;
+                            }
+                        """)
+                    break
+
+    def update_selection_ui(self):
+        """Update selection-related UI elements"""
+        count = len(self.selected_tools)
+        self.selected_count_label.setText(f"{count} ausgewählt")
+        self.install_selected_btn.setEnabled(count > 0)
+
+        if count > 0:
+            self.install_selected_btn.setText(f"🚀 {count} Tool{'s' if count != 1 else ''} installieren")
+        else:
+            self.install_selected_btn.setText("🚀 Ausgewählte installieren")
+
+    def select_all_tools(self):
+        """Select all tools"""
+        for i in range(self.layout().itemAt(2).widget().widget().layout().count()):  # Tools layout
+            item = self.layout().itemAt(2).widget().widget().layout().itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                if hasattr(widget, 'checkbox'):
+                    widget.checkbox.setChecked(True)
+
+    def select_no_tools(self):
+        """Deselect all tools"""
+        for i in range(self.layout().itemAt(2).widget().widget().layout().count()):  # Tools layout
+            item = self.layout().itemAt(2).widget().widget().layout().itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                if hasattr(widget, 'checkbox'):
+                    widget.checkbox.setChecked(False)
+
+    def install_selected_tools(self):
+        """Install all selected tools"""
+        if not self.selected_tools:
+            return
+
+        # Create batch command
+        selected_items = list(self.selected_tools.values())
+        commands = [item.command for item in selected_items]
+        batch_command = " && ".join(commands)
+
+        # Emit signal with batch command (create a temporary ConfigItem)
+        from core.config_manager import ConfigItem
+        batch_item = ConfigItem(
+            name=f"Batch Installation ({len(selected_items)} tools)",
+            description=f"Installing: {', '.join(item.name for item in selected_items)}",
+            command=batch_command,
+            category=self.category.id,
+            tags=["batch", "installation"]
+        )
+
+        self.tool_selected.emit(batch_item)
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Arch Linux Configuration Tool")
+        self.setGeometry(100, 100, 1200, 800)
+
+        # Backend components
+        self.config_manager = ConfigManager()
+        self.command_executor = CommandExecutor()
+
+        # UI state
+        self.categories: Dict[str, ConfigCategory] = {}
+        self.current_category: Optional[str] = None
+        self.command_history: List[Dict] = []  # Store command history
+
+        # Run dependency check first
+        self.run_dependency_check()
+
+        # Initialize UI
+        self.setup_ui()
+        self.setup_menu_bar()
+        self.setup_status_bar()
+
+        # Load configuration
+        self.load_configuration()
+
+    def run_dependency_check(self):
+        """Run dependency check dialog"""
+        dialog = DependencyCheckDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            sys.exit(1)  # Exit if dependency check failed
+
+    def setup_ui(self):
+        """Initialize the user interface"""
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        # Main layout
+        main_layout = QHBoxLayout()
+
+        # Left sidebar - Categories
+        sidebar = self.create_sidebar()
+        main_layout.addWidget(sidebar, 1)
+
+        # Right content area
+        content = self.create_content_area()
+        main_layout.addWidget(content, 3)
+
+        central_widget.setLayout(main_layout)
+
+    def create_sidebar(self) -> QWidget:
+        """Create the left sidebar with categories"""
+        sidebar = QGroupBox("Kategorien")
+        sidebar.setFixedWidth(300)
+
+        layout = QVBoxLayout()
+
+        # Search box
+        self.search_box = QLineEdit()
+        self.search_box.setPlaceholderText("🔍 Suche nach Tools...")
+        self.search_box.textChanged.connect(self.on_search_changed)
+        layout.addWidget(self.search_box)
+
+        # Categories list
+        self.categories_list = QListWidget()
+        self.categories_list.itemClicked.connect(self.on_category_selected)
+        layout.addWidget(self.categories_list)
+
+        # Refresh button
+        refresh_button = QPushButton("🔄 Konfiguration aktualisieren")
+        refresh_button.clicked.connect(self.refresh_configuration)
+        layout.addWidget(refresh_button)
+
+        sidebar.setLayout(layout)
+        return sidebar
+
+    def create_content_area(self) -> QWidget:
+        """Create the main content area"""
+        content = QTabWidget()
+
+        # Tools tab
+        self.tools_tab = QScrollArea()
+        self.tools_tab.setWidgetResizable(True)
+        self.tools_content = QWidget()
+        self.tools_layout = QVBoxLayout()
+        self.tools_content.setLayout(self.tools_layout)
+        self.tools_tab.setWidget(self.tools_content)
+        content.addTab(self.tools_tab, "🛠️ Tools")
+
+        # History tab
+        self.history_tab = self.create_history_tab()
+        content.addTab(self.history_tab, "📋 Verlauf")
+
+        # Stats tab
+        self.stats_tab = self.create_stats_tab()
+        content.addTab(self.stats_tab, "📊 Statistiken")
+
+        return content
+
+    def create_history_tab(self) -> QWidget:
+        """Create command history tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+
+        # History table
+        self.history_table = QTableWidget()
+        self.history_table.setColumnCount(5)
+        self.history_table.setHorizontalHeaderLabels([
+            "Zeit", "Befehl", "Status", "Exit Code", "Ausführungszeit"
+        ])
+
+        header = self.history_table.horizontalHeader()
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+
+        layout.addWidget(self.history_table)
+
+        # Clear history button
+        clear_button = QPushButton("🗑️ Verlauf löschen")
+        clear_button.clicked.connect(self.clear_history)
+        layout.addWidget(clear_button)
+
+        widget.setLayout(layout)
+        return widget
+
+    def create_stats_tab(self) -> QWidget:
+        """Create statistics tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+
+        # Stats header
+        header = QLabel("📊 Statistiken")
+        header.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.setStyleSheet("color: #2c3e50; padding: 10px;")
+        layout.addWidget(header)
+
+        # Stats content
+        self.stats_content = QLabel()
+        self.stats_content.setFont(QFont("Arial", 12))
+        self.stats_content.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.stats_content.setStyleSheet("padding: 20px; background-color: #f8f9fa; border-radius: 8px;")
+        layout.addWidget(self.stats_content)
+
+        # Refresh button
+        refresh_stats_btn = QPushButton("🔄 Statistiken aktualisieren")
+        refresh_stats_btn.clicked.connect(self.update_stats)
+        refresh_stats_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #007bff;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """)
+        layout.addWidget(refresh_stats_btn)
+
+        layout.addStretch()
+
+        # Initial stats update
+        self.update_stats()
+
+        widget.setLayout(layout)
+        return widget
+
+    def update_stats(self):
+        """Update statistics display"""
+        total_commands = len(self.command_history)
+
+        if total_commands == 0:
+            self.stats_content.setText("""
+<h3>📊 Befehls-Statistiken</h3>
+<p><strong>Noch keine Befehle ausgeführt.</strong></p>
+<p>Führe einige Tools aus, um Statistiken zu sehen!</p>
+
+<h3>📋 System-Informationen</h3>
+<p><strong>Kategorien geladen:</strong> {}</p>
+<p><strong>Tools verfügbar:</strong> {}</p>
+            """.format(
+                len(self.categories),
+                sum(len(cat.items) for cat in self.categories.values())
+            ))
+            return
+
+        # Calculate stats
+        successful = sum(1 for cmd in self.command_history if cmd.get('status') == 'SUCCESS')
+        failed = sum(1 for cmd in self.command_history if cmd.get('status') == 'FAILED')
+        success_rate = (successful / total_commands) * 100 if total_commands > 0 else 0
+
+        # Get most used commands
+        command_counts = {}
+        for cmd in self.command_history:
+            cmd_name = cmd.get('command', '')[:30] + ('...' if len(cmd.get('command', '')) > 30 else '')
+            command_counts[cmd_name] = command_counts.get(cmd_name, 0) + 1
+
+        most_used = sorted(command_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+
+        # Recent activity
+        recent_commands = self.command_history[-5:] if len(self.command_history) >= 5 else self.command_history
+
+        stats_text = f"""
+<h3>📊 Befehls-Statistiken</h3>
+<p><strong>Gesamt ausgeführt:</strong> {total_commands}</p>
+<p><strong>Erfolgreich:</strong> <span style='color: #28a745;'>{successful}</span></p>
+<p><strong>Fehlgeschlagen:</strong> <span style='color: #dc3545;'>{failed}</span></p>
+<p><strong>Erfolgsrate:</strong> {success_rate:.1f}%</p>
+
+<h3>🏆 Meist verwendete Befehle</h3>
+"""
+
+        for i, (cmd, count) in enumerate(most_used, 1):
+            stats_text += f"<p>{i}. <code>{cmd}</code> ({count}x)</p>"
+
+        if not most_used:
+            stats_text += "<p><em>Noch keine Befehle ausgeführt</em></p>"
+
+        stats_text += f"""
+<h3>📋 System-Informationen</h3>
+<p><strong>Kategorien geladen:</strong> {len(self.categories)}</p>
+<p><strong>Tools verfügbar:</strong> {sum(len(cat.items) for cat in self.categories.values())}</p>
+
+<h3>🕒 Letzte Aktivität</h3>
+"""
+
+        for cmd in reversed(recent_commands):
+            status_color = '#28a745' if cmd.get('status') == 'SUCCESS' else '#dc3545'
+            cmd_short = cmd.get('command', '')[:40] + ('...' if len(cmd.get('command', '')) > 40 else '')
+            stats_text += f"<p><span style='color: {status_color};'>●</span> {cmd.get('time', 'N/A')} - <code>{cmd_short}</code></p>"
+
+        self.stats_content.setText(stats_text)
+
+    def setup_menu_bar(self):
+        """Setup the menu bar"""
+        menubar = self.menuBar()
+
+        # File menu
+        file_menu = menubar.addMenu("Datei")
+        file_menu.addAction("Konfiguration aktualisieren", self.refresh_configuration)
+        file_menu.addSeparator()
+        file_menu.addAction("Beenden", self.close)
+
+        # Tools menu
+        tools_menu = menubar.addMenu("Tools")
+        tools_menu.addAction("Dependency Check", self.run_dependency_check)
+        tools_menu.addAction("Verlauf löschen", self.clear_history)
+
+        # Help menu
+        help_menu = menubar.addMenu("Hilfe")
+        help_menu.addAction("Über", self.show_about)
+
+    def setup_status_bar(self):
+        """Setup the status bar"""
+        self.statusBar().showMessage("Bereit")
+
+    def load_configuration(self):
+        """Load configuration from ConfigManager"""
+        self.statusBar().showMessage("Lade Konfiguration...")
+
+        try:
+            self.categories = self.config_manager.get_config()
+            self.populate_categories()
+            self.statusBar().showMessage(f"Konfiguration geladen: {len(self.categories)} Kategorien")
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Laden der Konfiguration:\n{e}")
+            self.statusBar().showMessage("Fehler beim Laden der Konfiguration")
+
+    def populate_categories(self):
+        """Populate the categories list"""
+        self.categories_list.clear()
+
+        for category in self.config_manager.get_categories():
+            item = QListWidgetItem()
+            item.setText(f"{category.icon} {category.name} ({len(category.items)})")
+            item.setData(Qt.ItemDataRole.UserRole, category.id)
+            self.categories_list.addItem(item)
+
+        # Select first category by default
+        if self.categories_list.count() > 0:
+            self.categories_list.setCurrentRow(0)
+            self.on_category_selected(self.categories_list.item(0))
+
+    def on_category_selected(self, item: QListWidgetItem):
+        """Handle category selection"""
+        category_id = item.data(Qt.ItemDataRole.UserRole)
+        self.current_category = category_id
+
+        if category_id in self.categories:
+            self.show_category_tools(self.categories[category_id])
+
+    def show_category_tools(self, category: ConfigCategory):
+        """Show tools for selected category"""
+        # Clear current content safely
+        while self.tools_layout.count():
+            child = self.tools_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        # Add category widget
+        category_widget = CategoryWidget(category)
+        category_widget.tool_selected.connect(self.on_tool_selected)
+        self.tools_layout.addWidget(category_widget)
+
+        # Add stretch to push content to top
+        self.tools_layout.addStretch()
+
+    def on_tool_selected(self, item: ConfigItem):
+        """Handle tool selection and execution"""
+        # Confirm execution
+        reply = QMessageBox.question(
+            self,
+            "Befehl ausführen",
+            f"Möchten Sie diesen Befehl ausführen?\n\n"
+            f"Tool: {item.name}\n"
+            f"Beschreibung: {item.description}\n"
+            f"Befehl: {item.command}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # Execute command
+            dialog = CommandExecutionDialog(self)
+            dialog.execute_command(item.command, item.description)
+            dialog.exec()
+
+            # History is automatically updated via the dialog's callback
+
+    def on_search_changed(self, text: str):
+        """Handle search input"""
+        if not text.strip():
+            self.populate_categories()
+            return
+
+        # Search for tools
+        results = self.config_manager.search_tools(text)
+
+        # Clear current content safely
+        while self.tools_layout.count():
+            child = self.tools_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        if results:
+            # Group results by category
+            category_results = {}
+            for item in results:
+                if item.category not in category_results:
+                    category_results[item.category] = []
+                category_results[item.category].append(item)
+
+            # Show results
+            for category_id, items in category_results.items():
+                if category_id in self.categories:
+                    category = self.categories[category_id]
+                    # Create a filtered category
+                    filtered_category = ConfigCategory(
+                        id=category.id,
+                        name=f"🔍 {category.name}",
+                        description=f"Suchergebnisse für '{text}'",
+                        order=category.order,
+                        icon=category.icon,
+                        items=items
+                    )
+
+                    category_widget = CategoryWidget(filtered_category)
+                    category_widget.tool_selected.connect(self.on_tool_selected)
+                    self.tools_layout.addWidget(category_widget)
+        else:
+            # No results
+            no_results = QLabel(f"Keine Ergebnisse für '{text}' gefunden.")
+            no_results.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            no_results.setStyleSheet("color: #888888; font-size: 14px;")
+            self.tools_layout.addWidget(no_results)
+
+        self.tools_layout.addStretch()
+
+    def refresh_configuration(self):
+        """Refresh configuration from GitHub"""
+        self.statusBar().showMessage("Aktualisiere Konfiguration...")
+
+        try:
+            self.categories = self.config_manager.get_config(force_update=True)
+            self.populate_categories()
+            self.statusBar().showMessage("Konfiguration aktualisiert")
+            QMessageBox.information(self, "Erfolg", "Konfiguration erfolgreich aktualisiert!")
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Aktualisieren:\n{e}")
+            self.statusBar().showMessage("Fehler beim Aktualisieren")
+
+    def add_command_to_history(self, command_data: Dict):
+        """Add a command to the history"""
+        self.command_history.append(command_data)
+
+        # Keep only last 100 commands
+        if len(self.command_history) > 100:
+            self.command_history = self.command_history[-100:]
+
+        # Update history table
+        self.update_history_table()
+
+    def update_history_table(self):
+        """Update the command history table"""
+        self.history_table.setRowCount(len(self.command_history))
+
+        for row, cmd_data in enumerate(reversed(self.command_history)):  # Latest first
+            self.history_table.setItem(row, 0, QTableWidgetItem(cmd_data.get('time', 'N/A')))
+
+            # Truncate long commands
+            command = cmd_data.get('command', '')
+            if len(command) > 50:
+                command = command[:50] + "..."
+            self.history_table.setItem(row, 1, QTableWidgetItem(command))
+
+            # Status with color
+            status = cmd_data.get('status', 'UNKNOWN')
+            status_item = QTableWidgetItem(status)
+            if status == 'SUCCESS':
+                status_item.setStyleSheet("color: #28a745; font-weight: bold;")
+            elif status == 'FAILED':
+                status_item.setStyleSheet("color: #dc3545; font-weight: bold;")
+            self.history_table.setItem(row, 2, status_item)
+
+            self.history_table.setItem(row, 3, QTableWidgetItem(str(cmd_data.get('return_code', 'N/A'))))
+
+            exec_time = cmd_data.get('execution_time', 0)
+            self.history_table.setItem(row, 4, QTableWidgetItem(f"{exec_time:.2f}s"))
+
+    def clear_history(self):
+        """Clear command history"""
+        reply = QMessageBox.question(
+            self,
+            "Verlauf löschen",
+            "Möchten Sie den gesamten Befehlsverlauf löschen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.command_history.clear()
+            self.update_history_table()
+            self.statusBar().showMessage("Verlauf gelöscht")
+
+    def show_about(self):
+        """Show about dialog"""
+        QMessageBox.about(
+            self,
+            "Über Arch Config Tool",
+            "Arch Linux Configuration Tool v1.0\n\n"
+            "Ein GUI-Tool für die Systemkonfiguration und -wartung\n"
+            "von Arch-basierten Linux-Distributionen.\n\n"
+            "Features:\n"
+            "• Dependency-Check\n"
+            "• GitHub-basierte Konfiguration\n"
+            "• Sichere Befehlsausführung\n"
+            "• Real-time Output\n"
+            "• Command History"
+        )
