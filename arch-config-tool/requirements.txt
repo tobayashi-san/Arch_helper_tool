@@ -1,4 +1,0 @@
-PyQt6>=6.5.0
-requests>=2.31.0
-PyYAML>=6.0
-
