@@ -282,3 +282,15 @@ categories:
         description: "Archiv_ZIP"
         command: "sudo pacman -S --noconfirm ark"
         tags: ["zip", "archive", "ark"]
+
+  testing:
+    name: "test"
+    description: ""
+    order: 11
+    icon: "X"
+    tools:
+      - name: "Krita"
+        description: "Krita is the full-featured digital art studio."
+        command: "flatpak install -y flathub org.kde.krita"
+        tags: ["art", "paint", "krita"]
+        requires: ["flatpak"]
