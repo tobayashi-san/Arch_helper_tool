@@ -294,3 +294,7 @@ categories:
         command: "flatpak install -y flathub org.kde.krita"
         tags: ["art", "paint", "krita"]
         requires: ["flatpak"]
+      - name: "VLC Media Player"
+        description: "Versatile multimedia player that plays most formats"
+        command: "sudo pacman -S --noconfirm vlc"
+        tags: ["video", "audio", "player", "codec"]
